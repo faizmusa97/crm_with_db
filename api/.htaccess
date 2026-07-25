@@ -1,0 +1,12 @@
+# ===================================================
+# URL Rewrite for Clean API Endpoints (Hide index.php)
+# ===================================================
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    DirectoryIndex index.php
+
+    # If the requested filename is not a file or directory, forward to index.php
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ index.php [L,QSA]
+</IfModule>
