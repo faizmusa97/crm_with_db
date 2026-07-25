@@ -1,4 +1,13 @@
 # ===================================================
+# Enable CORS Headers at Apache Server Level
+# ===================================================
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Header set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With"
+</IfModule>
+
+# ===================================================
 # URL Rewrite for Clean API Endpoints (Hide index.php)
 # ===================================================
 <IfModule mod_rewrite.c>
@@ -10,3 +19,4 @@
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ index.php [L,QSA]
 </IfModule>
+

@@ -31,7 +31,7 @@ const Sidebar = {
 };
 
 const Topbar = {
-  props: ['title', 'subtitle', 'currentRole', 'systemRoles'],
+  props: ['title', 'subtitle', 'currentRole', 'systemRoles', 'isAdmin'],
   emits: ['logout', 'navigate', 'change-role'],
   template: `
   <header class="topbar">
@@ -43,9 +43,10 @@ const Topbar = {
       <div style="display:flex;align-items:center;gap:6px;background:var(--glass);padding:6px 12px;border-radius:8px;border:1px solid var(--glass-border)">
         <i class="fa-solid fa-user-shield" style="color:var(--accent);font-size:14px"></i>
         <span style="font-size:12px;font-weight:600;color:var(--text-secondary)">Role:</span>
-        <select :value="currentRole" @change="$emit('change-role', $event.target.value)" style="background:transparent;border:none;color:var(--text-primary);font-size:12px;font-weight:700;cursor:pointer;outline:none">
+        <select v-if="isAdmin" :value="currentRole" @change="$emit('change-role', $event.target.value)" style="background:transparent;border:none;color:var(--text-primary);font-size:12px;font-weight:700;cursor:pointer;outline:none" title="Admin Testing Mode: Switch active role">
           <option v-for="r in (systemRoles || [])" :key="r" :value="r" style="background:#1e1e2d;color:#fff">{{r}}</option>
         </select>
+        <span v-else style="font-size:12px;font-weight:700;color:var(--text-primary)">{{currentRole}}</span>
       </div>
       <div class="topbar-btn" @click="$emit('navigate','settings')" title="Settings"><i class="fa-solid fa-gear"></i></div>
       <div class="topbar-btn" title="Notifications"><i class="fa-solid fa-bell"></i></div>

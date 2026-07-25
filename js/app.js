@@ -7,22 +7,33 @@ createApp({
     async function apiCall(action, payload = {}) {
       try {
         const userRole = userProfile ? (userProfile.value ? userProfile.value.role : 'HOD IT') : 'HOD IT';
-        const apiUrl = (window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) || 'api/index.php';
-        const res = await axios.post(apiUrl, { action, userRole, ...payload });
+        const apiUrl = (window.APP_CONFIG && window.APP_CONFIG.API_BASE_URL) || 'api/';
+        const headers = (window.APP_CONFIG && window.APP_CONFIG.DEFAULT_HEADERS) || {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        };
+        const res = await axios.post(apiUrl, { action, userRole, ...payload }, { headers });
         return res.data;
       } catch (err) {
-        console.warn('PHP API Call Notice (fallback active):', err.message);
+        if (err.response) {
+          console.warn('PHP API Response Error:', err.response.status, err.response.data);
+        } else if (err.request) {
+          console.warn('PHP API Network/CORS Error (No response received from server):', err.message);
+        } else {
+          console.warn('PHP API Request Error:', err.message);
+        }
         return null;
       }
     }
 
 
 
-    const customersList = ref([...customers]);
-    const employeesList = ref([...employees]);
-    const tasksList = ref([...tasks]);
-    const ordersList = ref([...orders]);
-    const activitiesList = ref([...activities]);
+    const appEnv = ref('prod');
+    const customersList = ref([]);
+    const employeesList = ref([]);
+    const tasksList = ref([]);
+    const ordersList = ref([]);
+    const activitiesList = ref([]);
 
     const isLoggedIn = ref(false);
     const page = ref('dashboard');
@@ -33,7 +44,7 @@ createApp({
     const selectedEmployee = ref(null);
     const showEmployeeModal = ref(false);
     const editingEmployee = ref(null);
-    const emptyEmployee = () => ({ name:'', email:'', phone:'', role:'Account Executive', dept:'Sales', accessLevel:'Standard', status:'active', password:'password123', deals:0, revenue:0 });
+    const emptyEmployee = () => ({ name: '', email: '', phone: '', role: 'Account Executive', dept: 'Sales', accessLevel: 'Standard', status: 'active', password: 'password123', deals: 0, revenue: 0 });
     const employeeForm = ref(emptyEmployee());
     const selectedTask = ref(null);
     const showTaskDetailModal = ref(false);
@@ -41,7 +52,7 @@ createApp({
     const taskEditForm = ref({});
     const customerTab = ref('overview');
     const showOrderModal = ref(false);
-    const orderForm = ref({ type:'request', title:'', desc:'', amount:0, assignee:'' });
+    const orderForm = ref({ type: 'request', title: '', desc: '', amount: 0, assignee: '' });
     const showQuotationModal = ref(false);
     const quotationOrder = ref(null);
     const searchQ = ref('');
@@ -50,9 +61,9 @@ createApp({
 
     const loginForm = ref({ email: 'admin@hnfcrm.com', password: '', remember: false });
     const loginError = ref('');
-    const taskForm = ref({ title:'', desc:'', priority:'medium', assignee:'', due:'', type:'Task', customer:'' });
+    const taskForm = ref({ title: '', desc: '', priority: 'medium', assignee: '', due: '', type: 'Task', customer: '' });
 
-    const emptyCustomer = () => ({ name:'', email:'', phone:'', company:'', status:'prospect', value:0, deal:'', owner:'', city:'', country:'', industry:'', notes:'' });
+    const emptyCustomer = () => ({ name: '', email: '', phone: '', company: '', status: 'prospect', value: 0, deal: '', owner: '', city: '', country: '', industry: '', notes: '' });
     const customerForm = ref(emptyCustomer());
 
     async function doLogin() {
@@ -80,14 +91,37 @@ createApp({
     async function loadInitialData() {
       const res = await apiCall('get_initial_data');
       if (res && res.status === 'success' && res.data) {
-        if (res.data.customers && res.data.customers.length) customersList.value = res.data.customers;
-        if (res.data.employees && res.data.employees.length) employeesList.value = res.data.employees;
-        if (res.data.tasks && res.data.tasks.length) tasksList.value = res.data.tasks;
-        if (res.data.orders && res.data.orders.length) ordersList.value = res.data.orders;
-        if (res.data.activities && res.data.activities.length) activitiesList.value = res.data.activities;
+        if (res.data.appEnv) {
+          appEnv.value = res.data.appEnv;
+        }
+        if (res.data.systemRoles && res.data.systemRoles.length) {
+          systemRoles.value = res.data.systemRoles;
+        }
+        if (res.data.rolePermissions) {
+          rolePermissions.value = res.data.rolePermissions;
+        }
+
+        // When connected to API database, always update lists with DB response
+        customersList.value = Array.isArray(res.data.customers) ? res.data.customers : [];
+        employeesList.value = Array.isArray(res.data.employees) ? res.data.employees : [];
+        tasksList.value = Array.isArray(res.data.tasks) ? res.data.tasks : [];
+        ordersList.value = Array.isArray(res.data.orders) ? res.data.orders : [];
+        activitiesList.value = Array.isArray(res.data.activities) ? res.data.activities : [];
+
         if (res.data.userProfile) {
           userProfile.value = { ...userProfile.value, ...res.data.userProfile };
           profileForm.value = { ...userProfile.value };
+        }
+      } else {
+        // Fallback to data.js ONLY if appEnv is set to 'dev'
+        if (appEnv.value === 'dev') {
+          if (typeof customers !== 'undefined') customersList.value = [...customers];
+          if (typeof employees !== 'undefined') employeesList.value = [...employees];
+          if (typeof tasks !== 'undefined') tasksList.value = [...tasks];
+          if (typeof orders !== 'undefined') ordersList.value = [...orders];
+          if (typeof activities !== 'undefined') activitiesList.value = [...activities];
+        } else {
+          console.error('API Error: Could not fetch initial CRM data from DB via API');
         }
       }
     }
@@ -100,7 +134,7 @@ createApp({
         userProfile.value = res.data;
       } else {
         const parts = profileForm.value.name.trim().split(' ');
-        const init = parts.length > 1 ? (parts[0][0] + parts[parts.length-1][0]).toUpperCase() : parts[0].slice(0,2).toUpperCase();
+        const init = parts.length > 1 ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase() : parts[0].slice(0, 2).toUpperCase();
         userProfile.value = { ...profileForm.value, initials: init };
       }
       profileSuccessMsg.value = 'Profile updated successfully!';
@@ -155,13 +189,13 @@ createApp({
           desc: orderForm.value.desc,
           status: 'pending',
           amount: orderForm.value.type === 'bug' ? 0 : Number(orderForm.value.amount),
-          date: new Date().toISOString().slice(0,10),
+          date: new Date().toISOString().slice(0, 10),
           quotationNo: orderForm.value.type === 'request' ? 'QT-' + new Date().getFullYear() + '-' + String(Date.now()).slice(-3) : null,
           assignee: orderForm.value.assignee,
         };
         ordersList.value.unshift(newO);
       }
-      orderForm.value = { type:'request', title:'', desc:'', amount:0, assignee:'' };
+      orderForm.value = { type: 'request', title: '', desc: '', amount: 0, assignee: '' };
       showOrderModal.value = false;
     }
 
@@ -169,7 +203,7 @@ createApp({
 
     function printQuotation() {
       const el = document.getElementById('quotation-print');
-      const w = window.open('','_blank');
+      const w = window.open('', '_blank');
       w.document.write('<html><head><title>Quotation</title><style>body{font-family:Arial,sans-serif;padding:40px;color:#111}h1{color:#6366f1}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ddd;padding:10px;text-align:left}th{background:#f5f5f5}.total{font-size:18px;font-weight:bold;color:#6366f1}.footer{margin-top:40px;font-size:12px;color:#888}</style></head><body>' + el.innerHTML + '</body></html>');
       w.document.close(); w.focus(); w.print(); w.close();
     }
@@ -207,17 +241,45 @@ createApp({
             icon: 'fa-user-plus'
           });
         }
+        showEmployeeModal.value = false;
       } else {
-        if (editingEmployee.value) {
-          const idx = employeesList.value.findIndex(e => e.id === editingEmployee.value.id);
-          if (idx !== -1) { employeesList.value.splice(idx, 1, { ...editingEmployee.value, ...employeeForm.value }); selectedEmployee.value = employeesList.value[idx]; }
+        if (appEnv.value !== 'dev') {
+          alert(res?.message || 'Failed to save employee to database via API.');
         } else {
-          const newE = { id: Date.now(), joined: new Date().toISOString().slice(0,10), deals: Number(employeeForm.value.deals)||0, revenue: Number(employeeForm.value.revenue)||0, tasks: 0, ...employeeForm.value };
-          employeesList.value.unshift(newE);
-          activitiesList.value.unshift({ id: Date.now(), text: `New employee account created: ${newE.name} (${newE.role})`, time: 'Just now', color: '#6366f1', icon: 'fa-user-plus' });
+          if (editingEmployee.value) {
+            const idx = employeesList.value.findIndex(e => e.id === editingEmployee.value.id);
+            if (idx !== -1) { employeesList.value.splice(idx, 1, { ...editingEmployee.value, ...employeeForm.value }); selectedEmployee.value = employeesList.value[idx]; }
+          } else {
+            const newE = { id: Date.now(), joined: new Date().toISOString().slice(0, 10), deals: Number(employeeForm.value.deals) || 0, revenue: Number(employeeForm.value.revenue) || 0, tasks: 0, ...employeeForm.value };
+            employeesList.value.unshift(newE);
+            activitiesList.value.unshift({ id: Date.now(), text: `New employee account created: ${newE.name} (${newE.role})`, time: 'Just now', color: '#6366f1', icon: 'fa-user-plus' });
+          }
+          showEmployeeModal.value = false;
         }
       }
-      showEmployeeModal.value = false;
+    }
+
+    async function deleteEmployee(eOrId) {
+      const id = typeof eOrId === 'object' ? eOrId.id : eOrId;
+      if (!confirm('Are you sure you want to delete this employee?')) return;
+      const res = await apiCall('delete_employee', { id });
+      if (res && res.status === 'success') {
+        employeesList.value = employeesList.value.filter(e => e.id !== id);
+        if (selectedEmployee.value && selectedEmployee.value.id === id) {
+          selectedEmployee.value = null;
+          page.value = 'employees';
+        }
+      } else {
+        if (appEnv.value !== 'dev') {
+          alert(res?.message || 'Failed to delete employee from database via API.');
+        } else {
+          employeesList.value = employeesList.value.filter(e => e.id !== id);
+          if (selectedEmployee.value && selectedEmployee.value.id === id) {
+            selectedEmployee.value = null;
+            page.value = 'employees';
+          }
+        }
+      }
     }
 
     function openAddCustomer() {
@@ -244,16 +306,44 @@ createApp({
         } else {
           customersList.value.unshift(res.data);
         }
+        showCustomerModal.value = false;
       } else {
-        if (editingCustomer.value) {
-          const idx = customersList.value.findIndex(c => c.id === editingCustomer.value.id);
-          if (idx !== -1) { customersList.value.splice(idx, 1, { ...editingCustomer.value, ...customerForm.value }); selectedCustomer.value = customersList.value[idx]; }
+        if (appEnv.value !== 'dev') {
+          alert(res?.message || 'Failed to save customer to database via API.');
         } else {
-          const newC = { id: Date.now(), joined: new Date().toISOString().slice(0,10), ...customerForm.value };
-          customersList.value.unshift(newC);
+          if (editingCustomer.value) {
+            const idx = customersList.value.findIndex(c => c.id === editingCustomer.value.id);
+            if (idx !== -1) { customersList.value.splice(idx, 1, { ...editingCustomer.value, ...customerForm.value }); selectedCustomer.value = customersList.value[idx]; }
+          } else {
+            const newC = { id: Date.now(), joined: new Date().toISOString().slice(0, 10), ...customerForm.value };
+            customersList.value.unshift(newC);
+          }
+          showCustomerModal.value = false;
         }
       }
-      showCustomerModal.value = false;
+    }
+
+    async function deleteCustomer(cOrId) {
+      const id = typeof cOrId === 'object' ? cOrId.id : cOrId;
+      if (!confirm('Are you sure you want to delete this customer?')) return;
+      const res = await apiCall('delete_customer', { id });
+      if (res && res.status === 'success') {
+        customersList.value = customersList.value.filter(c => c.id !== id);
+        if (selectedCustomer.value && selectedCustomer.value.id === id) {
+          selectedCustomer.value = null;
+          page.value = 'customers';
+        }
+      } else {
+        if (appEnv.value !== 'dev') {
+          alert(res?.message || 'Failed to delete customer from database via API.');
+        } else {
+          customersList.value = customersList.value.filter(c => c.id !== id);
+          if (selectedCustomer.value && selectedCustomer.value.id === id) {
+            selectedCustomer.value = null;
+            page.value = 'customers';
+          }
+        }
+      }
     }
 
     const filteredCustomers = computed(() =>
@@ -278,7 +368,7 @@ createApp({
       } else {
         tasksList.value.unshift({ id: Date.now(), ...taskForm.value, status: 'todo' });
       }
-      taskForm.value = { title:'', desc:'', priority:'medium', assignee:'', due:'', type:'Task', customer:'' };
+      taskForm.value = { title: '', desc: '', priority: 'medium', assignee: '', due: '', type: 'Task', customer: '' };
       showTaskModal.value = false;
     }
 
@@ -313,9 +403,9 @@ createApp({
     function statusBadge(s) {
       return s === 'active' ? 'badge-success' : s === 'prospect' ? 'badge-info' : s === 'inactive' ? 'badge-danger' : 'badge-warning';
     }
-    function fmtVal(v) { return v >= 1000 ? '$' + (v/1000).toFixed(1) + 'k' : '$' + v; }
+    function fmtVal(v) { return v >= 1000 ? '$' + (v / 1000).toFixed(1) + 'k' : '$' + v; }
 
-    const totalRevenue = computed(() => customersList.value.reduce((a,c) => a + c.value, 0));
+    const totalRevenue = computed(() => customersList.value.reduce((a, c) => a + c.value, 0));
     const activeCount = computed(() => customersList.value.filter(c => c.status === 'active').length);
     const openTasks = computed(() => tasksList.value.filter(t => t.status !== 'done').length);
 
@@ -328,7 +418,7 @@ createApp({
 
     const ganttDates = computed(() => {
       const dates = [];
-      const daysName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+      const daysName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       const todayStr = '2026-07-22';
       for (let i = 0; i < ganttTotalDays; i++) {
         const d = new Date(ganttStartDate);
@@ -370,15 +460,25 @@ createApp({
     const schedCompletionRate = computed(() => Math.round((schedDoneCount.value / (tasksList.value.length || 1)) * 100));
 
     const systemRoles = ref(typeof SYSTEM_ROLES !== 'undefined' ? SYSTEM_ROLES : ['HOD IT', 'Software Developer', 'IT Support', 'Technical Support', 'System Analysis', 'Devops', 'Finance', 'Marketing']);
+    const rolePermissions = ref({});
     const currentRole = computed(() => userProfile.value ? userProfile.value.role : 'HOD IT');
+    const isAdmin = computed(() => {
+      if (!userProfile.value) return false;
+      const r = (userProfile.value.role || '').toLowerCase();
+      const acc = (userProfile.value.accessLevel || '').toLowerCase();
+      return r === 'super admin' || r === 'admin' || r === 'hod it' || acc === 'admin';
+    });
 
     function can(perm) {
       const role = userProfile.value ? userProfile.value.role : 'HOD IT';
-      const perms = (typeof ROLE_PERMISSIONS !== 'undefined' && ROLE_PERMISSIONS[role]) ? ROLE_PERMISSIONS[role] : { view_sales: true, add_edit_customer: true, add_edit_task: true, add_edit_employee: true, view_employees: true };
+      const perms = (rolePermissions.value && rolePermissions.value[role])
+        ? rolePermissions.value[role]
+        : ((typeof ROLE_PERMISSIONS !== 'undefined' && ROLE_PERMISSIONS[role]) ? ROLE_PERMISSIONS[role] : { view_sales: true, add_edit_customer: true, add_edit_task: true, add_edit_employee: true, view_employees: true });
       return !!perms[perm];
     }
 
     function switchRole(r) {
+      if (!isAdmin.value) return; // Only Admin account can switch role for testing purposes
       if (userProfile.value) {
         userProfile.value.role = r;
         profileForm.value.role = r;
@@ -387,9 +487,9 @@ createApp({
 
     function fileIcon(name = '', type = '') {
       const ext = name.split('.').pop().toLowerCase();
-      if (['jpg','jpeg','png','gif','webp'].includes(ext) || type.includes('image')) return 'fa-file-image';
+      if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext) || type.includes('image')) return 'fa-file-image';
       if (ext === 'pdf' || type.includes('pdf')) return 'fa-file-pdf';
-      if (['doc','docx'].includes(ext) || type.includes('word')) return 'fa-file-word';
+      if (['doc', 'docx'].includes(ext) || type.includes('word')) return 'fa-file-word';
       return 'fa-file-lines';
     }
 
@@ -433,7 +533,7 @@ createApp({
               file_type: file.type,
               file_size: file.size,
               file_path: fileData,
-              created_at: new Date().toISOString().replace('T',' ').slice(0,19)
+              created_at: new Date().toISOString().replace('T', ' ').slice(0, 19)
             };
           }
 
@@ -480,15 +580,15 @@ createApp({
       schedTodoCount, schedInProgressCount, schedDoneCount, schedCompletionRate,
       pageInfo, filteredCustomers, filteredEmployees, taskCols, customerOrders,
       doLogin, viewCustomer, addTask, priorityBadge, statusBadge, fmtVal,
-      openAddCustomer, openEditCustomer, saveCustomer,
-      viewEmployee, openAddEmployee, openEditEmployee, saveEmployee,
+      openAddCustomer, openEditCustomer, saveCustomer, deleteCustomer,
+      viewEmployee, openAddEmployee, openEditEmployee, saveEmployee, deleteEmployee,
       viewTask, saveTaskEdit,
       addOrder, openQuotation, printQuotation,
-      safeInitials, safeColor,
+      safeInitials, safeColor, appEnv,
       totalRevenue, activeCount, openTasks,
       customers: customersList, employees: employeesList, tasks: tasksList, orders: ordersList, activities: activitiesList, chartData,
       getColor, initials,
-      systemRoles, currentRole, can, switchRole,
+      systemRoles, currentRole, isAdmin, can, switchRole,
       fileIcon, fmtFileSize, uploadingFile, handleFileUpload, removeAttachment, downloadAttachment
     };
 
@@ -524,7 +624,7 @@ createApp({
   <div v-else class="layout">
     <Sidebar :page="page" :user="userProfile" @navigate="p => { page = p; selectedCustomer = null; selectedEmployee = null; }" />
     <div class="main-content">
-      <Topbar :title="pageInfo.title" :subtitle="pageInfo.subtitle" :current-role="currentRole" :system-roles="systemRoles" @logout="isLoggedIn = false" @navigate="p => { page = p; selectedCustomer = null; selectedEmployee = null; }" @change-role="switchRole" />
+      <Topbar :title="pageInfo.title" :subtitle="pageInfo.subtitle" :current-role="currentRole" :system-roles="systemRoles" :is-admin="isAdmin" @logout="isLoggedIn = false" @navigate="p => { page = p; selectedCustomer = null; selectedEmployee = null; }" @change-role="switchRole" />
       <div class="page-wrapper fade-in">
 
 
@@ -643,6 +743,7 @@ createApp({
                     <td>{{c.city}}, {{c.country}}</td>
                     <td>
                       <button class="btn btn-ghost btn-sm" @click="viewCustomer(c)"><i class="fa-solid fa-eye"></i> View</button>
+                      <button v-if="can('add_edit_customer')" class="btn btn-ghost btn-sm" style="color:var(--danger)" @click.stop="deleteCustomer(c)" title="Delete Customer"><i class="fa-solid fa-trash"></i></button>
                     </td>
                   </tr>
                 </tbody>
@@ -657,6 +758,7 @@ createApp({
           <div style="display:flex;gap:10px;margin-bottom:16px">
             <button class="btn btn-ghost btn-sm" @click="page='customers'"><i class="fa-solid fa-arrow-left"></i> Back</button>
             <button v-if="can('add_edit_customer')" class="btn btn-primary btn-sm" @click="openEditCustomer"><i class="fa-solid fa-pen-to-square"></i> Edit Customer</button>
+            <button v-if="can('add_edit_customer')" class="btn btn-ghost btn-sm" style="color:var(--danger)" @click="deleteCustomer(selectedCustomer)"><i class="fa-solid fa-trash"></i> Delete Customer</button>
           </div>
 
           <!-- Profile Header -->
@@ -1043,6 +1145,7 @@ createApp({
           <div style="display:flex;gap:10px;margin-bottom:16px">
             <button class="btn btn-ghost btn-sm" @click="page='employees'"><i class="fa-solid fa-arrow-left"></i> Back</button>
             <button v-if="can('add_edit_employee')" class="btn btn-primary btn-sm" @click="openEditEmployee"><i class="fa-solid fa-pen-to-square"></i> Edit Employee</button>
+            <button v-if="can('add_edit_employee')" class="btn btn-ghost btn-sm" style="color:var(--danger)" @click="deleteEmployee(selectedEmployee)"><i class="fa-solid fa-trash"></i> Delete Employee</button>
           </div>
 
           <!-- Profile Header -->
@@ -1149,9 +1252,10 @@ createApp({
               <div class="form-row">
                 <div class="form-group"><label class="form-label">Phone Number</label><input class="form-control" v-model="profileForm.phone" /></div>
                 <div class="form-group"><label class="form-label">Role / Title</label>
-                  <select class="form-control" v-model="profileForm.role" @change="switchRole(profileForm.role)">
+                  <select class="form-control" v-model="profileForm.role" :disabled="!isAdmin" @change="switchRole(profileForm.role)">
                     <option v-for="r in systemRoles" :key="r" :value="r">{{r}}</option>
                   </select>
+                  <div v-if="!isAdmin" style="font-size:11px;color:var(--text-muted);margin-top:4px"><i class="fa-solid fa-lock"></i> Role is assigned by Admin in Employee Directory.</div>
                 </div>
               </div>
 
@@ -1320,16 +1424,10 @@ createApp({
           </div>
           <div class="form-row">
             <div class="form-group"><label class="form-label">Job Position / Role *</label>
-              <select class="form-control" v-model="employeeForm.role">
-                <option>Account Executive</option>
-                <option>Sales Manager</option>
-                <option>Senior AE</option>
-                <option>CRM Specialist</option>
-                <option>Support Lead</option>
-                <option>Marketing Manager</option>
-                <option>Software Engineer</option>
-                <option>System Administrator</option>
+              <select class="form-control" v-model="employeeForm.role" :disabled="!isAdmin">
+                <option v-for="r in systemRoles" :key="r" :value="r">{{r}}</option>
               </select>
+              <div v-if="!isAdmin" style="font-size:11px;color:var(--text-muted);margin-top:4px"><i class="fa-solid fa-lock"></i> Only Admin accounts can modify employee system roles.</div>
             </div>
             <div class="form-group"><label class="form-label">Department *</label>
               <select class="form-control" v-model="employeeForm.dept">
@@ -1339,6 +1437,10 @@ createApp({
                 <option>Marketing</option>
                 <option>Engineering</option>
                 <option>Finance</option>
+                <option>IT</option>
+                <option>IT Support</option>
+                <option>Infrastructure</option>
+                <option>Systems</option>
               </select>
             </div>
           </div>
@@ -1349,11 +1451,12 @@ createApp({
           </div>
           <div class="form-row">
             <div class="form-group"><label class="form-label">System Access Level</label>
-              <select class="form-control" v-model="employeeForm.accessLevel">
+              <select class="form-control" v-model="employeeForm.accessLevel" :disabled="!isAdmin">
                 <option value="Admin">Admin (Full System Access)</option>
                 <option value="Manager">Manager (Team & Performance Access)</option>
                 <option value="Standard">Standard (Basic Operational Access)</option>
               </select>
+              <div v-if="!isAdmin" style="font-size:11px;color:var(--text-muted);margin-top:4px"><i class="fa-solid fa-lock"></i> Only Admin accounts can modify access levels.</div>
             </div>
             <div class="form-group"><label class="form-label">Account Status</label>
               <select class="form-control" v-model="employeeForm.status">

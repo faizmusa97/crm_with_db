@@ -5,8 +5,8 @@
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
+header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Accept');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -20,32 +20,42 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit();
 }
 
-require_once __DIR__ . '/db.php';
-
-// Parse POST input (JSON payload or x-www-form-urlencoded)
-$rawInput = file_get_contents('php://input');
-$input = json_decode($rawInput, true);
-
-if (!is_array($input)) {
-    $input = $_POST;
-}
-
-$action = isset($input['action']) ? trim($input['action']) : '';
-$userRole = isset($input['userRole']) ? trim($input['userRole']) : 'HOD IT';
-
-$permissions = [
-    'HOD IT'             => ['view_sales' => true,  'add_edit_customer' => true,  'add_edit_task' => true, 'add_edit_employee' => true],
-    'Software Developer' => ['view_sales' => true,  'add_edit_customer' => true,  'add_edit_task' => true, 'add_edit_employee' => true],
-    'IT Support'         => ['view_sales' => false, 'add_edit_customer' => false, 'add_edit_task' => true, 'add_edit_employee' => false],
-    'Technical Support'  => ['view_sales' => false, 'add_edit_customer' => false, 'add_edit_task' => true, 'add_edit_employee' => false],
-    'Devops'             => ['view_sales' => false, 'add_edit_customer' => false, 'add_edit_task' => true, 'add_edit_employee' => false],
-    'System Analysis'    => ['view_sales' => false, 'add_edit_customer' => true,  'add_edit_task' => true, 'add_edit_employee' => false],
-    'Finance'            => ['view_sales' => true,  'add_edit_customer' => true,  'add_edit_task' => true, 'add_edit_employee' => false],
-    'Marketing'          => ['view_sales' => true,  'add_edit_customer' => true,  'add_edit_task' => true, 'add_edit_employee' => false],
-];
-$userPerms = isset($permissions[$userRole]) ? $permissions[$userRole] : $permissions['HOD IT'];
-
 try {
+    require_once __DIR__ . '/db.php';
+
+    if (!$pdo) {
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Database connection failed: ' . ($dbError ?? 'Please verify your .env database settings.')
+        ]);
+        exit();
+    }
+
+    // Parse POST input (JSON payload or x-www-form-urlencoded)
+    $rawInput = file_get_contents('php://input');
+    $input = json_decode($rawInput, true);
+
+    if (!is_array($input)) {
+        $input = $_POST;
+    }
+
+    $action = isset($input['action']) ? trim($input['action']) : '';
+    $userRole = isset($input['userRole']) ? trim($input['userRole']) : 'HOD IT';
+    $appEnv = getenv('APP_ENV') ?: 'prod';
+
+    $permissions = [
+        'Super Admin'        => ['view_sales' => true,  'add_edit_customer' => true,  'add_edit_task' => true, 'add_edit_employee' => true],
+        'HOD IT'             => ['view_sales' => true,  'add_edit_customer' => true,  'add_edit_task' => true, 'add_edit_employee' => true],
+        'Software Developer' => ['view_sales' => true,  'add_edit_customer' => true,  'add_edit_task' => true, 'add_edit_employee' => true],
+        'IT Support'         => ['view_sales' => false, 'add_edit_customer' => false, 'add_edit_task' => true, 'add_edit_employee' => false],
+        'Technical Support'  => ['view_sales' => false, 'add_edit_customer' => false, 'add_edit_task' => true, 'add_edit_employee' => false],
+        'Devops'             => ['view_sales' => false, 'add_edit_customer' => false, 'add_edit_task' => true, 'add_edit_employee' => false],
+        'System Analysis'    => ['view_sales' => false, 'add_edit_customer' => true,  'add_edit_task' => true, 'add_edit_employee' => false],
+        'Finance'            => ['view_sales' => true,  'add_edit_customer' => true,  'add_edit_task' => true, 'add_edit_employee' => false],
+        'Marketing'          => ['view_sales' => true,  'add_edit_customer' => true,  'add_edit_task' => true, 'add_edit_employee' => false],
+    ];
+    $userPerms = isset($permissions[$userRole]) ? $permissions[$userRole] : $permissions['HOD IT'];
+
     switch ($action) {
 
 
@@ -119,6 +129,9 @@ try {
             echo json_encode([
                 'status' => 'success',
                 'data' => [
+                    'appEnv' => $appEnv,
+                    'systemRoles' => array_keys($permissions),
+                    'rolePermissions' => $permissions,
                     'customers' => $customers,
                     'employees' => $employees,
                     'tasks' => $tasks,
@@ -126,6 +139,19 @@ try {
                     'activities' => $activities,
                     'userProfile' => $userProfile,
                     'chartData' => $chartData
+                ]
+            ]);
+            break;
+
+        // ===================================================
+        // ACTION: get_roles
+        // ===================================================
+        case 'get_roles':
+            echo json_encode([
+                'status' => 'success',
+                'data' => [
+                    'systemRoles' => array_keys($permissions),
+                    'rolePermissions' => $permissions
                 ]
             ]);
             break;
@@ -457,11 +483,43 @@ try {
             echo json_encode(['status' => 'success', 'data' => $prof]);
             break;
 
+        // ===================================================
+        // ACTION: delete_customer
+        // ===================================================
+        case 'delete_customer':
+            if (empty($userPerms['add_edit_customer'])) {
+                echo json_encode(['status' => 'error', 'message' => 'Permission denied: Your role cannot delete customers.']);
+                break;
+            }
+            $id = isset($input['id']) ? (int)$input['id'] : 0;
+            if ($id > 0) {
+                $stmt = $pdo->prepare("DELETE FROM customers WHERE id = ?");
+                $stmt->execute([$id]);
+            }
+            echo json_encode(['status' => 'success', 'message' => 'Customer deleted successfully.']);
+            break;
+
+        // ===================================================
+        // ACTION: delete_employee
+        // ===================================================
+        case 'delete_employee':
+            if (empty($userPerms['add_edit_employee'])) {
+                echo json_encode(['status' => 'error', 'message' => 'Permission denied: Your role cannot delete employees.']);
+                break;
+            }
+            $id = isset($input['id']) ? (int)$input['id'] : 0;
+            if ($id > 0) {
+                $stmt = $pdo->prepare("DELETE FROM employees WHERE id = ?");
+                $stmt->execute([$id]);
+            }
+            echo json_encode(['status' => 'success', 'message' => 'Employee deleted successfully.']);
+            break;
+
         default:
             echo json_encode(['status' => 'error', 'message' => 'Invalid or missing POST action parameter.']);
             break;
     }
-} catch (Exception $e) {
+} catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
 }
